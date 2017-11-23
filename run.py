@@ -1,8 +1,10 @@
-# Runner program for all routines. Possible parameters (more than one applicable):
-#   download:   If not present, downloads and unpacks the SNLI dataset from SNLP website.
-#   preprocess: Precompute word embeddings and prepare dataset
-#   train:      Runs training phase of the neural network.
-#   test:       Runs test data on pretrained model (if present).
+"""
+Runner program for all routines. Possible parameters (more than one applicable):
+    download:   If not present, downloads and unpacks the SNLI dataset from SNLP website.
+    preprocess: Precompute word embeddings and prepare dataset
+    train:      Runs training phase of the neural network.
+    test:       Runs test data on pretrained model (if present).
+"""
 
 import sys
 import rnn
