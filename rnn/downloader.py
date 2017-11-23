@@ -7,44 +7,62 @@ import wget
 import zipfile
 import rnn.logger as logger
 
-DOWNLOAD_PATH = "https://nlp.stanford.edu/projects/snli/snli_1.0.zip"
+# downloads config
 SAVE_DIR = "data"
+DATASET_DOWNLOAD_PATH = "https://nlp.stanford.edu/projects/snli/snli_1.0.zip"
 DATASET_FILENAME = "snli"
+GLOVE_DOWNLOAD_PATH = "http://nlp.stanford.edu/data/glove.42B.300d.zip"
+GLOVE_FILENAME = "glove"
 
 
-def dataset_unpacked():
-    return os.path.isdir(SAVE_DIR + "/" + DATASET_FILENAME)
+# Checks, whether the unpacked archive is present.
+def is_unpacked(archive_name):
+    return os.path.isdir(SAVE_DIR + "/" + archive_name)
 
 
-def download():
-    if os.path.exists(SAVE_DIR + "/" + DATASET_FILENAME + ".zip") or dataset_unpacked():
-        logger.info("Dataset already downloaded.")
+# Specifically checks for unpacked dataset and glove vectors
+def check_all_unpacked():
+    return is_unpacked(DATASET_FILENAME) and is_unpacked(GLOVE_FILENAME)
+
+
+# Returns the path to folder with unpacked dataset.
+def unpacked_dataset_path():
+    return SAVE_DIR + "/" + DATASET_FILENAME + "/snli_1.0"
+
+
+# Downloads and saves zip archive.
+def download(url, archive_name, label=""):
+    if os.path.exists(SAVE_DIR + "/" + archive_name + ".zip") or is_unpacked(archive_name):
+        logger.info(label.capitalize() + " already downloaded.")
         return
     if not os.path.exists(SAVE_DIR):
         os.makedirs(SAVE_DIR)
 
-    logger.info("Downloading the dataset from " + DOWNLOAD_PATH)
-    wget.download(DOWNLOAD_PATH, SAVE_DIR + "/" + DATASET_FILENAME + ".zip")
-    logger.success("Download completed." + DOWNLOAD_PATH)
+    logger.info("Downloading the " + label + " archive from " + url)
+    wget.download(url, SAVE_DIR + "/" + archive_name + ".zip")
+    logger.success("Download completed.")
 
 
-def unpack():
-    if dataset_unpacked():
-        logger.info("Dataset already unpacked.")
+# Unzips the compressed dataset.
+def unpack(archive_name, label=""):
+    if is_unpacked(archive_name):
+        logger.info(label.capitalize() + " already unpacked.")
         return
-    if not os.path.exists(SAVE_DIR + "/" + DATASET_FILENAME + ".zip"):
-        logger.error("No dataset zipfile to unpack")
+    if not os.path.exists(SAVE_DIR + "/" + archive_name + ".zip"):
+        logger.error("No " + label + " zipfile to unpack")
         return
 
-    logger.info("Unpacking dataset.")
-    os.makedirs(SAVE_DIR + "/" + DATASET_FILENAME)
-    with zipfile.ZipFile(SAVE_DIR + "/" + DATASET_FILENAME + ".zip", "r") as file:
-        file.extractall(SAVE_DIR + "/" + DATASET_FILENAME)
-    logger.success("Dataset unpacked.")
-    os.remove(SAVE_DIR + "/" + DATASET_FILENAME + ".zip")
+    logger.info("Unpacking " + label)
+    os.makedirs(SAVE_DIR + "/" + archive_name)
+    with zipfile.ZipFile(SAVE_DIR + "/" + archive_name + ".zip", "r") as file:
+        file.extractall(SAVE_DIR + "/" + archive_name)
+    logger.success("Unpacking complete.")
+    os.remove(SAVE_DIR + "/" + archive_name + ".zip")
 
 
 def run():
     logger.header("Running downloader module.")
-    download()
-    unpack()
+    download(DATASET_DOWNLOAD_PATH, DATASET_FILENAME, "dataset")
+    unpack(DATASET_FILENAME, "dataset")
+    download(GLOVE_DOWNLOAD_PATH, GLOVE_FILENAME, "glove")
+    unpack(GLOVE_FILENAME, "glove")

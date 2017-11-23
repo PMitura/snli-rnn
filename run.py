@@ -12,15 +12,15 @@ import rnn
 
 def main(argv):
     if not len(argv):
-        print("Running all components!")
         rnn.downloader.run()
+        rnn.preprocessor.run()
         return
 
     for arg in argv:
         if arg == "download":
             rnn.downloader.run()
         elif arg == "preprocess":
-            print("Preprocess: not implemented yet.")
+            rnn.preprocessor.run()
         elif arg == "train":
             print("Train: not implemented yet.")
         elif arg == "test":
