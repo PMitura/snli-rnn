@@ -3,10 +3,14 @@ Preprocessor module. Responsible for transforming the dataset JSONs into input a
 """
 
 import itertools
+import json
 import json_lines
 import os
 import rnn.logger as logger
+import time
 from rnn.downloader import check_all_unpacked, unpacked_dataset_path, unpacked_glove_path
+
+PRECOMPUTED_GLOVE_PATH = "data/glove/precomputed.json"
 
 
 # Converts json file to array of python dictionaries
@@ -23,9 +27,9 @@ def wordvec_to_dict(filename, word_filter):
     vec_dict = {}
 
     # progress bar overhead
-    bar = logger.get_progress_bar("Reading GloVe vectors", max=20)
+    bar = logger.get_progress_bar("Reading GloVe vectors", level=2, max=20)
     total_size = os.path.getsize(filename)
-    found_counter = 0;
+    found_counter = 0
     size_counter = 0
     last_milestone = 0
     with open(filename, "r") as file:
@@ -46,8 +50,8 @@ def wordvec_to_dict(filename, word_filter):
 
     bar.finish()
     # Observation: most of the unmatched words are typos, compounds or really uncommon.
-    logger.info("Found vectors for " + str(found_counter) + " words out of " + str(len(word_filter)) + "."\
-                + " Elapsed time: " + str(bar.elapsed) + " s")
+    logger.info("Found vectors for " + str(found_counter) + " words out of " + str(len(word_filter)) + "."
+                + " Elapsed time: " + str(bar.elapsed) + " s", level=2)
     return vec_dict
 
 
@@ -68,6 +72,21 @@ def get_used_words(dataset, wordset=set()):
     return wordset
 
 
+# Assigns ID to every key in a dictionary
+def generate_dictionary_ids(src_dict):
+    counter = 0
+    id_dict = {}
+    for key in src_dict:
+        id_dict[counter] = key
+        counter += 1
+    return id_dict
+
+
+# Transforms string vocabulary and embeddings dictionary into ID indexed embedding matrix
+def generate_embedding_matrix(vocabulary, embeddings_dict, word_id_mapping):
+    pass
+
+
 def run():
     logger.header("Running preprocessor module.")
 
@@ -83,16 +102,29 @@ def run():
         return
     logger.success("Datasets loaded.")
 
-    logger.info("Loading word vectors into memory")
-    # Get a set of words used in datasets, so we don't store useless word vectors.
-    wordset = set()
-    get_used_words(train_dataset, wordset)
-    get_used_words(test_dataset, wordset)
-    # Load needed part of word vectors. Might induce large memory costs.
-    try:
-        word_vectors = wordvec_to_dict(unpacked_glove_path() + "/glove.42B.300d.txt", wordset)
-    except FileNotFoundError as error:
-        logger.error("File: " + error.filename + " not found")
-        return
-    logger.success("Word vectors loaded.")
+    time_start = time.time()
+    if os.path.exists(PRECOMPUTED_GLOVE_PATH):
+        logger.info("Precomputed word vectors found, loading into memory.")
+        with open(PRECOMPUTED_GLOVE_PATH, 'r') as infile:
+            word_vectors = json.load(infile)
+    else:
+        logger.info("Loading word vectors into memory")
+        # Get a set of words used in datasets, so we don't store useless word vectors.
+        vocabulary = set()
+        get_used_words(train_dataset, vocabulary)
+        get_used_words(test_dataset, vocabulary)
+        # Load needed part of word vectors. Might induce large memory costs.
+        try:
+            word_vectors = wordvec_to_dict(unpacked_glove_path() + "/glove.42B.300d.txt", vocabulary)
+        except FileNotFoundError as error:
+            logger.error("File: " + error.filename + " not found")
+            return
+        logger.info("Storing loaded vectors for future use.", level=2)
+        with open(PRECOMPUTED_GLOVE_PATH, 'w') as outfile:
+            json.dump(word_vectors, outfile)
+    time_end = time.time()
+    logger.success("Word vectors loaded. Elapsed time: " + "{0:.2f}".format(time_end - time_start) + " s")
 
+    logger.info("Generating initial embedding matrix.")
+    generate_dictionary_ids(word_vectors)
+    logger.success("Embedding matrix created.")
