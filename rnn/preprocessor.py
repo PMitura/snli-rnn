@@ -5,12 +5,14 @@ Preprocessor module. Responsible for transforming the dataset JSONs into input a
 import itertools
 import json
 import json_lines
+import numpy as np
 import os
 import rnn.logger as logger
 import time
 from rnn.downloader import check_all_unpacked, unpacked_dataset_path, unpacked_glove_path
 
-PRECOMPUTED_GLOVE_PATH = "data/glove/precomputed.json"
+PRECOMPUTED_GLOVE_PATH = "data/glove/word_vectors.json"
+PRECOMPUTED_MATRIX_PATH = "data/glove/embedding_matrix.json"
 
 
 # Converts json file to array of python dictionaries
@@ -77,17 +79,20 @@ def generate_dictionary_ids(src_dict):
     counter = 0
     id_dict = {}
     for key in src_dict:
-        id_dict[counter] = key
+        id_dict[key] = counter
         counter += 1
     return id_dict
 
 
 # Transforms string vocabulary and embeddings dictionary into ID indexed embedding matrix
-def generate_embedding_matrix(vocabulary, embeddings_dict, word_id_mapping):
-    pass
+def generate_embedding_matrix(embeddings_dict, word_id_mapping):
+    embedding_matrix = np.zeros(shape=(len(embeddings_dict), 300))
+    for key, item in embeddings_dict.items():
+        embedding_matrix[word_id_mapping[key]] = np.array(item)
+    return embedding_matrix
 
 
-def run():
+def run(force_recompute=False):
     logger.header("Running preprocessor module.")
 
     if not check_all_unpacked():
@@ -102,8 +107,9 @@ def run():
         return
     logger.success("Datasets loaded.")
 
+    embeddings_changed = False
     time_start = time.time()
-    if os.path.exists(PRECOMPUTED_GLOVE_PATH):
+    if os.path.exists(PRECOMPUTED_GLOVE_PATH) and not force_recompute:
         logger.info("Precomputed word vectors found, loading into memory.")
         with open(PRECOMPUTED_GLOVE_PATH, 'r') as infile:
             word_vectors = json.load(infile)
@@ -122,9 +128,18 @@ def run():
         logger.info("Storing loaded vectors for future use.", level=2)
         with open(PRECOMPUTED_GLOVE_PATH, 'w') as outfile:
             json.dump(word_vectors, outfile)
+        embeddings_changed = True
     time_end = time.time()
     logger.success("Word vectors loaded. Elapsed time: " + "{0:.2f}".format(time_end - time_start) + " s")
 
-    logger.info("Generating initial embedding matrix.")
-    generate_dictionary_ids(word_vectors)
-    logger.success("Embedding matrix created.")
+    if not os.path.exists(PRECOMPUTED_MATRIX_PATH) or force_recompute or embeddings_changed:
+        logger.info("Generating initial embedding matrix.")
+        id_mapping = generate_dictionary_ids(word_vectors)
+        embedding_matrix = generate_embedding_matrix(word_vectors, id_mapping)
+        logger.info("Storing embedding matrix for future use.", level=2)
+        with open(PRECOMPUTED_MATRIX_PATH, 'w') as outfile:
+            json.dump(embedding_matrix.tolist(), outfile)
+        logger.success("Embedding matrix created.")
+    else:
+        logger.info("Embedding matrix found, skipping its computation.")
+
