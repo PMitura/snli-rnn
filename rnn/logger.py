@@ -1,3 +1,10 @@
+from progress.bar import Bar
+
+
+class LoggerBar(Bar):
+    suffix = '%(percent).1f%% - %(eta)ds'
+
+
 class Bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -23,3 +30,9 @@ def info(text, level=1):
 
 def error(text, level=1):
     print((' ' * level * 4) + Bcolors.FAIL + "[ERR]  " + Bcolors.ENDC + text)
+
+
+def get_progress_bar(message="", level=1, max=20):
+    prefix = (' ' * level * 4) + Bcolors.OKBLUE + "[INFO] " + Bcolors.ENDC + message
+    return LoggerBar(prefix, max=max)
+
