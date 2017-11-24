@@ -30,6 +30,11 @@ def unpacked_dataset_path():
     return SAVE_DIR + "/" + DATASET_FILENAME + "/snli_1.0"
 
 
+# Returns the path to folder with unpacked GloVe word vectors.
+def unpacked_glove_path():
+    return SAVE_DIR + "/" + GLOVE_FILENAME
+
+
 # Downloads and saves zip archive.
 def download(url, archive_name, label=""):
     if os.path.exists(SAVE_DIR + "/" + archive_name + ".zip") or is_unpacked(archive_name):
