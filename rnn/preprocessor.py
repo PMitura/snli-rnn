@@ -29,7 +29,7 @@ def wordvec_to_dict(filename, word_filter):
     vec_dict = {}
 
     # progress bar overhead
-    bar = logger.get_progress_bar("Reading GloVe vectors", level=2, max=20)
+    bar = logger.get_progress_bar("Reading GloVe vectors", level=2, limit=20)
     total_size = os.path.getsize(filename)
     found_counter = 0
     size_counter = 0

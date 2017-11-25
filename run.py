@@ -14,6 +14,7 @@ def main(argv):
     if not len(argv):
         rnn.downloader.run()
         rnn.preprocessor.run()
+        rnn.trainer.run()
         return
 
     for arg in argv:
@@ -22,7 +23,7 @@ def main(argv):
         elif arg == "preprocess":
             rnn.preprocessor.run()
         elif arg == "train":
-            print("Train: not implemented yet.")
+            rnn.trainer.run()
         elif arg == "test":
             print("Test: not implemented yet.")
         else:
