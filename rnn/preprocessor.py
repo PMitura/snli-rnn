@@ -13,6 +13,8 @@ from rnn.downloader import check_all_unpacked, unpacked_dataset_path, unpacked_g
 
 PRECOMPUTED_GLOVE_PATH = "data/glove/word_vectors.json"
 PRECOMPUTED_MATRIX_PATH = "data/glove/embedding_matrix.json"
+PRECOMPUTED_TRAIN_DATA_PATH = "data/train_data_matrix.json"
+PRECOMPUTED_TEST_DATA_PATH = "data/test_data_matrix.json"
 
 
 # Converts json file to array of python dictionaries
@@ -92,12 +94,34 @@ def generate_embedding_matrix(embeddings_dict, word_id_mapping):
     return embedding_matrix
 
 
+# Translates list of sentence pairs into two matrices of their word IDs.
+# Words in sentences are skipped, if no matching word vector is provided (= missing ID in mappings)
+def input_data_to_matrices(dataset, word_id_mapping):
+    premise_matrix = []
+    hypothesis_matrix = []
+    # sentence1 denotes premise, sentence2 is hypothesis
+    for sentence_pair in dataset:
+        premise_row = []
+        hypothesis_row = []
+        for item in sentence_to_words(sentence_pair["sentence1"]):
+            if word_id_mapping.count(item):
+                premise_row.append(word_id_mapping[item])
+        for item in sentence_to_words(sentence_pair["sentence2"]):
+            if word_id_mapping.count(item):
+                hypothesis_row.append(word_id_mapping[item])
+        premise_matrix.append(premise_row)
+        hypothesis_matrix.append(hypothesis_row)
+    return premise_matrix, hypothesis_matrix
+
+
+# Run all preprocessing routines
 def run(force_recompute=False):
     logger.header("Running preprocessor module.")
 
     if not check_all_unpacked():
         logger.error("Unpacked datasets or word vectors are missing. Please run downloader prior to preprocessor.")
 
+    time_start = time.time()
     logger.info("Loading datasets into memory")
     try:
         train_dataset = json_to_array(unpacked_dataset_path() + "/snli_1.0_train.jsonl")
@@ -105,7 +129,8 @@ def run(force_recompute=False):
     except FileNotFoundError as error:
         logger.error("File: " + error.filename + " not found")
         return
-    logger.success("Datasets loaded.")
+    time_end = time.time()
+    logger.success("Datasets loaded. Elapsed time: " + "{0:.2f}".format(time_end - time_start) + " s")
 
     embeddings_changed = False
     time_start = time.time()
@@ -143,3 +168,4 @@ def run(force_recompute=False):
     else:
         logger.info("Embedding matrix found, skipping its computation.")
 
+    logger.info("Creating train and test input matrices")
