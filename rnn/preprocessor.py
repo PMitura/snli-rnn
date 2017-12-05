@@ -13,8 +13,10 @@ from rnn.downloader import check_all_unpacked, unpacked_dataset_path, unpacked_g
 
 PRECOMPUTED_GLOVE_PATH = "data/glove/word_vectors.json"
 PRECOMPUTED_MATRIX_PATH = "data/glove/embedding_matrix.json"
-PRECOMPUTED_TRAIN_DATA_PATH = "data/train_data_matrix.json"
-PRECOMPUTED_TEST_DATA_PATH = "data/test_data_matrix.json"
+PRECOMPUTED_TRAIN_PREMISES_PATH = "data/train_data_premises_matrix.json"
+PRECOMPUTED_TRAIN_HYPOTHESES_PATH = "data/train_data_hypotheses_matrix.json"
+PRECOMPUTED_TEST_PREMISES_PATH = "data/test_data_premises_matrix.json"
+PRECOMPUTED_TEST_HYPOTHESES_PATH = "data/test_data_hypotheses_matrix.json"
 
 
 # Converts json file to array of python dictionaries
@@ -104,10 +106,10 @@ def input_data_to_matrices(dataset, word_id_mapping):
         premise_row = []
         hypothesis_row = []
         for item in sentence_to_words(sentence_pair["sentence1"]):
-            if word_id_mapping.count(item):
+            if item in word_id_mapping:
                 premise_row.append(word_id_mapping[item])
         for item in sentence_to_words(sentence_pair["sentence2"]):
-            if word_id_mapping.count(item):
+            if item in word_id_mapping:
                 hypothesis_row.append(word_id_mapping[item])
         premise_matrix.append(premise_row)
         hypothesis_matrix.append(hypothesis_row)
@@ -157,9 +159,9 @@ def run(force_recompute=False):
     time_end = time.time()
     logger.success("Word vectors loaded. Elapsed time: " + "{0:.2f}".format(time_end - time_start) + " s")
 
+    id_mapping = generate_dictionary_ids(word_vectors)
     if not os.path.exists(PRECOMPUTED_MATRIX_PATH) or force_recompute or embeddings_changed:
         logger.info("Generating initial embedding matrix.")
-        id_mapping = generate_dictionary_ids(word_vectors)
         embedding_matrix = generate_embedding_matrix(word_vectors, id_mapping)
         logger.info("Storing embedding matrix for future use.", level=2)
         with open(PRECOMPUTED_MATRIX_PATH, 'w') as outfile:
@@ -168,4 +170,28 @@ def run(force_recompute=False):
     else:
         logger.info("Embedding matrix found, skipping its computation.")
 
-    logger.info("Creating train and test input matrices")
+    if not os.path.exists(PRECOMPUTED_TRAIN_PREMISES_PATH) \
+            or not os.path.exists(PRECOMPUTED_TRAIN_HYPOTHESES_PATH) \
+            or force_recompute or embeddings_changed:
+        logger.info("Creating train matrix")
+        train_premise_matrix, train_hypothesis_matrix = input_data_to_matrices(train_dataset, id_mapping)
+        logger.info("Storing matrix for future use.", level=2)
+        with open(PRECOMPUTED_TRAIN_PREMISES_PATH, 'w') as outfile:
+            json.dump(train_premise_matrix, outfile)
+        with open(PRECOMPUTED_TRAIN_HYPOTHESES_PATH, 'w') as outfile:
+            json.dump(train_premise_matrix, outfile)
+    else:
+        logger.info("Train matrix found, skipping its computation")
+
+    if not os.path.exists(PRECOMPUTED_TEST_PREMISES_PATH) \
+            or not os.path.exists(PRECOMPUTED_TEST_HYPOTHESES_PATH) \
+            or force_recompute or embeddings_changed:
+        logger.info("Creating test matrix")
+        test_premise_matrix, test_hypothesis_matrix = input_data_to_matrices(test_dataset, id_mapping)
+        logger.info("Storing matrix for future use.", level=2)
+        with open(PRECOMPUTED_TEST_PREMISES_PATH, 'w') as outfile:
+            json.dump(test_premise_matrix, outfile)
+        with open(PRECOMPUTED_TEST_HYPOTHESES_PATH, 'w') as outfile:
+            json.dump(test_premise_matrix, outfile)
+    else:
+        logger.info("Test matrix found, skipping its computation")
