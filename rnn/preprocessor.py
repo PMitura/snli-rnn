@@ -12,11 +12,16 @@ import time
 from rnn.downloader import check_all_unpacked, unpacked_dataset_path, unpacked_glove_path
 
 PRECOMPUTED_GLOVE_PATH = "data/glove/word_vectors.json"
-PRECOMPUTED_MATRIX_PATH = "data/glove/embedding_matrix.json"
+PRECOMPUTED_EMB_MATRIX_PATH = "data/glove/embedding_matrix.json"
+
 PRECOMPUTED_TRAIN_PREMISES_PATH = "data/train_data_premises_matrix.json"
 PRECOMPUTED_TRAIN_HYPOTHESES_PATH = "data/train_data_hypotheses_matrix.json"
+
 PRECOMPUTED_TEST_PREMISES_PATH = "data/test_data_premises_matrix.json"
 PRECOMPUTED_TEST_HYPOTHESES_PATH = "data/test_data_hypotheses_matrix.json"
+
+PRECOMPUTED_TRAIN_LABELS_PATH = "data/train_labels.json"
+PRECOMPUTED_TEST_LABELS_PATH = "data/test_labels.json"
 
 
 # Converts json file to array of python dictionaries
@@ -80,7 +85,7 @@ def get_used_words(dataset, wordset=set()):
 
 # Assigns ID to every key in a dictionary
 def generate_dictionary_ids(src_dict):
-    counter = 0
+    counter = 1
     id_dict = {}
     for key in src_dict:
         id_dict[key] = counter
@@ -90,19 +95,31 @@ def generate_dictionary_ids(src_dict):
 
 # Transforms string vocabulary and embeddings dictionary into ID indexed embedding matrix
 def generate_embedding_matrix(embeddings_dict, word_id_mapping):
-    embedding_matrix = np.zeros(shape=(len(embeddings_dict), 300))
+    embedding_matrix = np.zeros(shape=(len(embeddings_dict)+1, 300))
     for key, item in embeddings_dict.items():
         embedding_matrix[word_id_mapping[key]] = np.array(item)
     return embedding_matrix
 
 
-# Translates list of sentence pairs into two matrices of their word IDs.
+# Translates list of sentence pairs into two matrices of their word IDs and includes label vectors.
 # Words in sentences are skipped, if no matching word vector is provided (= missing ID in mappings)
 def input_data_to_matrices(dataset, word_id_mapping):
     premise_matrix = []
     hypothesis_matrix = []
+    label_counter = 0
+    label_dict = {}
+    labels = []
+
     # sentence1 denotes premise, sentence2 is hypothesis
     for sentence_pair in dataset:
+        label = sentence_pair["gold_label"]
+        if label == '-':
+            continue
+        if label not in label_dict:
+            label_dict[label] = label_counter
+            label_counter += 1
+        labels.append(label_dict[label])
+
         premise_row = []
         hypothesis_row = []
         for item in sentence_to_words(sentence_pair["sentence1"]):
@@ -113,7 +130,9 @@ def input_data_to_matrices(dataset, word_id_mapping):
                 hypothesis_row.append(word_id_mapping[item])
         premise_matrix.append(premise_row)
         hypothesis_matrix.append(hypothesis_row)
-    return premise_matrix, hypothesis_matrix
+
+    logger.info("Number of distinct labels: " + str(label_counter), level=2)
+    return premise_matrix, hypothesis_matrix, labels
 
 
 # Run all preprocessing routines
@@ -160,11 +179,11 @@ def run(force_recompute=False):
     logger.success("Word vectors loaded. Elapsed time: " + "{0:.2f}".format(time_end - time_start) + " s")
 
     id_mapping = generate_dictionary_ids(word_vectors)
-    if not os.path.exists(PRECOMPUTED_MATRIX_PATH) or force_recompute or embeddings_changed:
+    if not os.path.exists(PRECOMPUTED_EMB_MATRIX_PATH) or force_recompute or embeddings_changed:
         logger.info("Generating initial embedding matrix.")
         embedding_matrix = generate_embedding_matrix(word_vectors, id_mapping)
         logger.info("Storing embedding matrix for future use.", level=2)
-        with open(PRECOMPUTED_MATRIX_PATH, 'w') as outfile:
+        with open(PRECOMPUTED_EMB_MATRIX_PATH, 'w') as outfile:
             json.dump(embedding_matrix.tolist(), outfile)
         logger.success("Embedding matrix created.")
     else:
@@ -172,26 +191,34 @@ def run(force_recompute=False):
 
     if not os.path.exists(PRECOMPUTED_TRAIN_PREMISES_PATH) \
             or not os.path.exists(PRECOMPUTED_TRAIN_HYPOTHESES_PATH) \
+            or not os.path.exists(PRECOMPUTED_TRAIN_LABELS_PATH) \
             or force_recompute or embeddings_changed:
-        logger.info("Creating train matrix")
-        train_premise_matrix, train_hypothesis_matrix = input_data_to_matrices(train_dataset, id_mapping)
+        logger.info("Creating train matrix and labels")
+        train_premise_matrix, train_hypothesis_matrix, train_labels = input_data_to_matrices(train_dataset, id_mapping)
         logger.info("Storing matrix for future use.", level=2)
         with open(PRECOMPUTED_TRAIN_PREMISES_PATH, 'w') as outfile:
             json.dump(train_premise_matrix, outfile)
         with open(PRECOMPUTED_TRAIN_HYPOTHESES_PATH, 'w') as outfile:
             json.dump(train_premise_matrix, outfile)
+        with open(PRECOMPUTED_TRAIN_LABELS_PATH, 'w') as outfile:
+            json.dump(train_labels, outfile)
+        logger.success("Matrix stored")
     else:
-        logger.info("Train matrix found, skipping its computation")
+        logger.info("Train matrix found, skipping its computation.")
 
     if not os.path.exists(PRECOMPUTED_TEST_PREMISES_PATH) \
             or not os.path.exists(PRECOMPUTED_TEST_HYPOTHESES_PATH) \
+            or not os.path.exists(PRECOMPUTED_TEST_LABELS_PATH) \
             or force_recompute or embeddings_changed:
-        logger.info("Creating test matrix")
-        test_premise_matrix, test_hypothesis_matrix = input_data_to_matrices(test_dataset, id_mapping)
+        logger.info("Creating test matrix and labels")
+        test_premise_matrix, test_hypothesis_matrix, test_labels = input_data_to_matrices(test_dataset, id_mapping)
         logger.info("Storing matrix for future use.", level=2)
         with open(PRECOMPUTED_TEST_PREMISES_PATH, 'w') as outfile:
             json.dump(test_premise_matrix, outfile)
         with open(PRECOMPUTED_TEST_HYPOTHESES_PATH, 'w') as outfile:
             json.dump(test_premise_matrix, outfile)
+        with open(PRECOMPUTED_TEST_LABELS_PATH, 'w') as outfile:
+            json.dump(test_labels, outfile)
+        logger.success("Matrix stored")
     else:
-        logger.info("Test matrix found, skipping its computation")
+        logger.info("Test matrix found, skipping its computation.")
