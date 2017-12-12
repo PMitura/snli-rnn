@@ -10,6 +10,9 @@ import rnn.logger as logger
 import rnn.preprocessor as prep
 import tensorflow as tf
 
+RNN_HIDDEN_COUNT = 300
+RNN_LAYERS_COUNT = 2
+
 
 # Loads embedding matrix as a tensorflow variable
 def load_embedding_matrix():
@@ -67,19 +70,84 @@ def produce_batch(premise, hypothesis, labels, batch_size=32, name=None):
         return premise_batch, hypothesis_batch, labels_batch
 
 
+# gets vector of sequence lenghts, since sentences in our dataset have variable word counts
+def get_sequence_lengths(sequence):
+    used = tf.sign(tf.reduce_max(tf.abs(sequence), 2))
+    length = tf.reduce_sum(used, 1)
+    length = tf.cast(length, tf.int32)
+    return length
+
+
+# Returns last relevant output of the network, based on processed sequence length
+def last_relevant(output, lengths):
+    batch_size = tf.shape(output)[0]
+    max_length = int(output.get_shape()[1])
+    output_size = int(output.get_shape()[2])
+    index = tf.range(0, batch_size) * max_length + (lengths - 1)
+    flat = tf.reshape(output, [-1, output_size])
+    relevant = tf.gather(flat, index)
+    return relevant
+
+
+def build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix):
+    premise_batch, hypothesis_batch, label_batch = produce_batch(premise_matrix, hypothesis_matrix, labels)
+    premise_embeddings = tf.nn.embedding_lookup(embedding_matrix, premise_batch)
+    hypothesis_embeddings = tf.nn.embedding_lookup(embedding_matrix, hypothesis_batch)
+
+    # vectors with individual sequence lengths
+    premise_lengths = get_sequence_lengths(premise_embeddings)
+    hypothesis_lengths = get_sequence_lengths(hypothesis_embeddings)
+
+    num_steps = int(premise_matrix.shape[1])
+    num_feats = int(premise_embeddings.get_shape()[2])
+    print(num_steps)
+    print(num_feats)
+    premise_input = tf.placeholder(tf.float32, [None, num_steps, num_feats])
+    hypothesis_input = tf.placeholder(tf.float32, [None, num_steps, num_feats])
+
+    with tf.variable_scope("premise_network"):
+        gru_premise_layers = [tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)] * RNN_LAYERS_COUNT
+        multi_premise_cell = tf.nn.rnn_cell.MultiRNNCell(gru_premise_layers)
+        output_premise, states_premise = tf.nn.dynamic_rnn(
+            cell=multi_premise_cell,
+            inputs=premise_input,
+            dtype=tf.float32,
+            sequence_length=premise_lengths
+        )
+
+    with tf.variable_scope("hypothesis_network"):
+        gru_hypothesis_layers = [tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)] * RNN_LAYERS_COUNT
+        multi_hypothesis_cell = tf.nn.rnn_cell.MultiRNNCell(gru_hypothesis_layers)
+        output_hypothesis, states_hypothesis = tf.nn.dynamic_rnn(
+            cell=multi_hypothesis_cell,
+            inputs=hypothesis_input,
+            dtype=tf.float32,
+            sequence_length=hypothesis_lengths
+        )
+
+    premise_last = last_relevant(output_premise, premise_lengths)
+    hypothesis_last = last_relevant(output_hypothesis, hypothesis_lengths)
+
+    print(premise_last)
+
+
 def run():
     logger.header("Running trainer module.")
 
-    logger.info("Loading embedding matrix into tensorflow model")
+    logger.info("Loading embedding matrix into tensorflow model.")
     embedding_matrix = load_embedding_matrix()
-    logger.success("Matrix loaded")
+    logger.success("Matrix loaded.")
 
-    logger.info("Loading training data matrices")
+    logger.info("Loading training data matrices.")
     premise_matrix, hypothesis_matrix, labels = load_train_matrices()
-    logger.success("Matrices loaded")
+    logger.success("Matrices loaded.")
 
-    logger.info("Building tensorflow model")
-    premise_batch, hypothesis_batch, label_batch = produce_batch(premise_matrix, hypothesis_matrix, labels)
-    word_embeddings = tf.nn.embedding_lookup(embedding_matrix, premise_batch)
-    logger.success("Model built")
+    logger.info("Building Tensorflow model.")
+    build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix)
+    logger.success("Model built.")
 
+    """
+    res = tf.contrib.learn.run_n({"y": premise_lengths}, n=1, feed_dict=None)
+    print("Batch shape: {}".format(res[0]["y"].shape))
+    print(res[0]["y"])
+    """
