@@ -13,9 +13,9 @@ import tensorflow as tf
 RNN_HIDDEN_COUNT = 300
 
 EPOCH_COUNT = 20
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.003
 BATCH_SIZE = 32
-BATCH_CEILING = 100
+BATCH_CEILING = 300
 
 
 # Loads embedding matrix as a tensorflow variable
@@ -26,8 +26,10 @@ def load_embedding_matrix():
     with open(prep.PRECOMPUTED_EMB_MATRIX_PATH, 'r') as matrix_file:
         matrix = json.load(matrix_file)
     np_matrix = np.array(matrix, np.float32)
+
+    # whether to keep this trainable or not is up to discussion
     tf_matrix = tf.get_variable(name="tf_matrix", shape=np_matrix.shape,
-                                initializer=tf.constant_initializer(np_matrix), trainable=False)
+                                initializer=tf.constant_initializer(np_matrix), trainable=True)
     return tf_matrix
 
 
@@ -74,14 +76,15 @@ def produce_batch(premise, hypothesis, labels, batch_size=BATCH_SIZE, name=None)
         labels = tf.convert_to_tensor(labels, name="labels", dtype=tf.float32)
 
         input_len = tf.shape(premise)[0]
-        num_steps = tf.shape(premise)[1]
+        num_steps_premise = tf.shape(premise)[1]
+        num_steps_hypothesis = tf.shape(hypothesis)[1]
         ceiling = tf.constant(BATCH_CEILING, name="ceiling")
         batch_len = tf.minimum(ceiling, input_len // batch_size)
 
         i = tf.train.range_input_producer(limit=batch_len, shuffle=True).dequeue()
-        premise_batch = tf.slice(premise, [i * batch_size, 0], [batch_size, num_steps], name="premise_batch")
-        hypothesis_batch = tf.slice(hypothesis, [i * batch_size, 0], [batch_size, num_steps], name="hypotheis_batch")
-        labels_batch = tf.slice(labels, [i * batch_size, 0], [batch_size, labels.shape[1]], name="labels_batch")
+        premise_batch = tf.slice(premise, [i * batch_size, 0], [batch_size, num_steps_premise])
+        hypothesis_batch = tf.slice(hypothesis, [i * batch_size, 0], [batch_size, num_steps_hypothesis])
+        labels_batch = tf.slice(labels, [i * batch_size, 0], [batch_size, labels.shape[1]])
 
         return premise_batch, hypothesis_batch, labels_batch
 
@@ -113,47 +116,48 @@ def build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix):
     premise_lengths = get_sequence_lengths(premise_embeddings)
     hypothesis_lengths = get_sequence_lengths(hypothesis_embeddings)
 
-    num_steps = int(premise_matrix.shape[1])
+    num_steps_premise = int(premise_matrix.shape[1])
+    num_steps_hypothesis = int(hypothesis_matrix.shape[1])
 
     # build separate RNNs for premise and hypothesis
     with tf.variable_scope("premise_network"):
-        gru_premise_layers = [tf.nn.rnn_cell.GRUCell(size) for size in [RNN_HIDDEN_COUNT, RNN_HIDDEN_COUNT / 2]]
-        multi_premise_cell = tf.nn.rnn_cell.MultiRNNCell(gru_premise_layers)
+        gru_premise_layer = tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)
         output_premise, states_premise = tf.nn.dynamic_rnn(
-            cell=multi_premise_cell,
+            cell=gru_premise_layer,
             inputs=premise_embeddings,
             dtype=tf.float32,
             sequence_length=premise_lengths
         )
 
     with tf.variable_scope("hypothesis_network"):
-        gru_hypothesis_layers = [tf.nn.rnn_cell.GRUCell(size) for size in [RNN_HIDDEN_COUNT, RNN_HIDDEN_COUNT / 2]]
-        multi_hypothesis_cell = tf.nn.rnn_cell.MultiRNNCell(gru_hypothesis_layers)
+        gru_hypothesis_layer = tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)
         output_hypothesis, states_hypothesis = tf.nn.dynamic_rnn(
-            cell=multi_hypothesis_cell,
+            cell=gru_hypothesis_layer,
             inputs=hypothesis_embeddings,
             dtype=tf.float32,
             sequence_length=hypothesis_lengths
         )
 
     # get the last elements of RNN output matching the length of the sequence, without padding
-    premise_last = last_relevant(output_premise, premise_lengths, num_steps)
-    hypothesis_last = last_relevant(output_hypothesis, hypothesis_lengths, num_steps)
+    premise_last = last_relevant(output_premise, premise_lengths, num_steps_premise)
+    hypothesis_last = last_relevant(output_hypothesis, hypothesis_lengths, num_steps_hypothesis)
 
     # merge networks into a single dense layer
     rnn_join = tf.concat([premise_last, hypothesis_last], 1)
-    merged_nn = tf.layers.dense(rnn_join, RNN_HIDDEN_COUNT, activation=tf.nn.relu)
+    dense1 = tf.layers.dense(rnn_join, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
+    dense2 = tf.layers.dense(dense1, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
+    dense3 = tf.layers.dense(dense2, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
 
     # softmax classification layer on output
     num_classes = labels.shape[1]
-    weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN_COUNT, num_classes], stddev=0.1))
+    weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN_COUNT * 2, num_classes], stddev=0.1))
     bias = tf.Variable(tf.constant(0.1, shape=[num_classes]))
-    prediction = tf.nn.softmax(tf.matmul(merged_nn, weight) + bias)
+    prediction = tf.nn.softmax(tf.matmul(dense3, weight) + bias)
 
     # feed results into optimizer
     cross_entropy = tf.reduce_mean(-tf.reduce_sum(label_batch * tf.log(prediction), [1]))
     optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
-    return optimizer.minimize(cross_entropy), cross_entropy, prediction, label_batch
+    return optimizer.minimize(cross_entropy), cross_entropy
 
 
 def run():
@@ -168,7 +172,7 @@ def run():
     logger.success("Matrices loaded.")
 
     logger.info("Building Tensorflow model.")
-    model, loss, p, l = build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix)
+    model, loss = build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix)
     logger.success("Model built.")
 
     logger.info("Running Tensorflow session. Good luck.")
@@ -183,9 +187,7 @@ def run():
             logger.info("Epoch " + str(epoch) + " startup...", level=2)
             sum_loss = 0
             for batch in range(num_batches):
-                _, curr_loss, pp, ll = session.run([model, loss, p, l])
-                print(pp)
-                print(ll)
+                _, curr_loss = session.run([model, loss, p, l])
                 sum_loss += curr_loss
                 logger.info("Batch " + str(batch) + " , curr. loss: " + str(curr_loss), level=3)
             logger.info("Epoch " + str(epoch) + " done. Avg loss: " + str(sum_loss / num_batches), level=2)

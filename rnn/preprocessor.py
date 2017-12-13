@@ -136,7 +136,7 @@ def input_data_to_matrices(dataset, word_id_mapping):
 
 
 # Run all preprocessing routines
-def run(force_recompute=False):
+def run(force_recompute=True):
     logger.header("Running preprocessor module.")
 
     if not check_all_unpacked():
@@ -199,7 +199,7 @@ def run(force_recompute=False):
         with open(PRECOMPUTED_TRAIN_PREMISES_PATH, 'w') as outfile:
             json.dump(train_premise_matrix, outfile)
         with open(PRECOMPUTED_TRAIN_HYPOTHESES_PATH, 'w') as outfile:
-            json.dump(train_premise_matrix, outfile)
+            json.dump(train_hypothesis_matrix, outfile)
         with open(PRECOMPUTED_TRAIN_LABELS_PATH, 'w') as outfile:
             json.dump(train_labels, outfile)
         logger.success("Matrix stored")
