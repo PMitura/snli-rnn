@@ -107,6 +107,12 @@ def last_relevant(output, lengths, max_length):
     return relevant
 
 
+# get error average for given prediction
+def get_error(prediction, labels):
+    mistakes = tf.not_equal(tf.argmax(labels, 1), tf.argmax(prediction, 1))
+    return tf.reduce_mean(tf.cast(mistakes, tf.float32))
+
+
 def build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix):
     premise_batch, hypothesis_batch, label_batch = produce_batch(premise_matrix, hypothesis_matrix, labels)
     premise_embeddings = tf.nn.embedding_lookup(embedding_matrix, premise_batch)
@@ -155,9 +161,11 @@ def build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix):
     prediction = tf.nn.softmax(tf.matmul(dense3, weight) + bias)
 
     # feed results into optimizer
-    cross_entropy = tf.reduce_mean(-tf.reduce_sum(label_batch * tf.log(prediction), [1]))
+    offset = tf.constant(1e-8, shape=[num_classes])  # prevent NaN loss in case of log(0)
+    cross_entropy = tf.reduce_mean(-tf.reduce_sum(label_batch * tf.log(tf.add(prediction, offset)), [1]))
     optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
-    return optimizer.minimize(cross_entropy), cross_entropy
+    error = get_error(prediction, label_batch)
+    return optimizer.minimize(cross_entropy), cross_entropy, error
 
 
 def run():
@@ -172,7 +180,7 @@ def run():
     logger.success("Matrices loaded.")
 
     logger.info("Building Tensorflow model.")
-    model, loss = build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix)
+    model, loss, error = build_model(premise_matrix, hypothesis_matrix, labels, embedding_matrix)
     logger.success("Model built.")
 
     logger.info("Running Tensorflow session. Good luck.")
@@ -183,14 +191,19 @@ def run():
 
         session.run(tf.global_variables_initializer())
         num_batches = min(BATCH_CEILING, len(labels) // BATCH_SIZE)
-        for epoch in range(EPOCH_COUNT):
+        for epoch in range(1, EPOCH_COUNT + 1):
             logger.info("Epoch " + str(epoch) + " startup...", level=2)
             sum_loss = 0
-            for batch in range(num_batches):
-                _, curr_loss = session.run([model, loss, p, l])
+            sum_err = 0
+            for batch in range(1, num_batches + 1):
+                _, curr_loss, curr_err = session.run([model, loss, error])
                 sum_loss += curr_loss
-                logger.info("Batch " + str(batch) + " , curr. loss: " + str(curr_loss), level=3)
-            logger.info("Epoch " + str(epoch) + " done. Avg loss: " + str(sum_loss / num_batches), level=2)
+                sum_err += curr_err
+                if batch % 100 == 0 and batch > 0:
+                    logger.info("Batch " + str(batch) + " , loss: " + str(sum_loss / batch)
+                                + "    acc.: " + str((1 - sum_err / batch) * 100), level=3)
+            logger.info("Epoch " + str(epoch) + " done. Train. loss: " + str(sum_loss / num_batches)
+                        + "     Train. acc.: " + str((1 - sum_err / num_batches) * 100), level=2)
 
         input_coord.request_stop()
         input_coord.join(input_threads)

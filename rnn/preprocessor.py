@@ -43,7 +43,7 @@ def wordvec_to_dict(filename, word_filter):
     found_counter = 0
     size_counter = 0
     last_milestone = 0
-    with open(filename, "r") as file:
+    with open(filename, "r", encoding="utf8") as file:
         for raw_line in file:
             # progress bar overhead
             size_counter += len(raw_line) + 1

@@ -11,6 +11,7 @@ import rnn
 
 
 def main(argv):
+
     if not len(argv):
         rnn.downloader.run()
         rnn.preprocessor.run()
