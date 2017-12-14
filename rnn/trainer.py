@@ -5,6 +5,7 @@ Trainer module. Responsible for training the neural network, and saving the crea
 import json
 import numpy as np
 import os
+import random
 import sys
 import rnn.logger as logger
 import rnn.preprocessor as prep
@@ -46,15 +47,9 @@ def load_padded_matrix(path):
 
 
 def labels_to_onehot(label_ids):
-    label_dict = {}
-    label_counter = 0
-    for lid in label_ids:
-        if lid not in label_dict:
-            label_dict[lid] = label_counter
-            label_counter += 1
-    labels = np.zeros((len(label_ids), label_counter), np.bool)
+    labels = np.zeros((len(label_ids), NUM_CLASSES), np.bool)
     for idx, lid in enumerate(label_ids):
-        labels[idx][label_dict[lid]] = 1
+        labels[idx][lid] = 1
     return labels
 
 

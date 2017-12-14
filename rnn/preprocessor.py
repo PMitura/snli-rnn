@@ -102,11 +102,10 @@ def generate_embedding_matrix(embeddings_dict, word_id_mapping):
 
 # Translates list of sentence pairs into two matrices of their word IDs and includes label vectors.
 # Words in sentences are skipped, if no matching word vector is provided (= missing ID in mappings)
-def input_data_to_matrices(dataset, word_id_mapping):
+def input_data_to_matrices(dataset, word_id_mapping, label_dict):
     premise_matrix = []
     hypothesis_matrix = []
     label_counter = 0
-    label_dict = {}
     labels = []
 
     # sentence1 denotes premise, sentence2 is hypothesis
@@ -162,8 +161,8 @@ def run(force_recompute=True):
         logger.info("Loading word vectors into memory")
         # Get a set of words used in datasets, so we don't store useless word vectors.
         vocabulary = set()
-        get_used_words(train_dataset, vocabulary)
-        get_used_words(test_dataset, vocabulary)
+        vocabulary = get_used_words(train_dataset, vocabulary)
+        vocabulary = get_used_words(test_dataset, vocabulary)
         # Load needed part of word vectors. Might induce large memory costs.
         try:
             word_vectors = wordvec_to_dict(unpacked_glove_path() + "/glove.42B.300d.txt", vocabulary)
@@ -188,12 +187,14 @@ def run(force_recompute=True):
     else:
         logger.info("Embedding matrix found, skipping its computation.")
 
+    label_dict = {}
     if not os.path.exists(PRECOMPUTED_TRAIN_PREMISES_PATH) \
             or not os.path.exists(PRECOMPUTED_TRAIN_HYPOTHESES_PATH) \
             or not os.path.exists(PRECOMPUTED_TRAIN_LABELS_PATH) \
             or force_recompute or embeddings_changed:
         logger.info("Creating train matrix and labels")
-        train_premise_matrix, train_hypothesis_matrix, train_labels = input_data_to_matrices(train_dataset, id_mapping)
+        train_premise_matrix, train_hypothesis_matrix, train_labels = input_data_to_matrices(train_dataset, id_mapping,
+                                                                                             label_dict)
         logger.info("Storing matrix for future use.", level=2)
         with open(PRECOMPUTED_TRAIN_PREMISES_PATH, 'w') as outfile:
             json.dump(train_premise_matrix, outfile)
@@ -210,7 +211,8 @@ def run(force_recompute=True):
             or not os.path.exists(PRECOMPUTED_TEST_LABELS_PATH) \
             or force_recompute or embeddings_changed:
         logger.info("Creating test matrix and labels")
-        test_premise_matrix, test_hypothesis_matrix, test_labels = input_data_to_matrices(test_dataset, id_mapping)
+        test_premise_matrix, test_hypothesis_matrix, test_labels = input_data_to_matrices(test_dataset, id_mapping,
+                                                                                          label_dict)
         logger.info("Storing matrix for future use.", level=2)
         with open(PRECOMPUTED_TEST_PREMISES_PATH, 'w') as outfile:
             json.dump(test_premise_matrix, outfile)
