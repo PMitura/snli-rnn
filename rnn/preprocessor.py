@@ -16,11 +16,10 @@ PRECOMPUTED_EMB_MATRIX_PATH = "data/glove/embedding_matrix.json"
 
 PRECOMPUTED_TRAIN_PREMISES_PATH = "data/train_data_premises_matrix.json"
 PRECOMPUTED_TRAIN_HYPOTHESES_PATH = "data/train_data_hypotheses_matrix.json"
+PRECOMPUTED_TRAIN_LABELS_PATH = "data/train_labels.json"
 
 PRECOMPUTED_TEST_PREMISES_PATH = "data/test_data_premises_matrix.json"
 PRECOMPUTED_TEST_HYPOTHESES_PATH = "data/test_data_hypotheses_matrix.json"
-
-PRECOMPUTED_TRAIN_LABELS_PATH = "data/train_labels.json"
 PRECOMPUTED_TEST_LABELS_PATH = "data/test_labels.json"
 
 
@@ -216,7 +215,7 @@ def run(force_recompute=True):
         with open(PRECOMPUTED_TEST_PREMISES_PATH, 'w') as outfile:
             json.dump(test_premise_matrix, outfile)
         with open(PRECOMPUTED_TEST_HYPOTHESES_PATH, 'w') as outfile:
-            json.dump(test_premise_matrix, outfile)
+            json.dump(test_hypothesis_matrix, outfile)
         with open(PRECOMPUTED_TEST_LABELS_PATH, 'w') as outfile:
             json.dump(test_labels, outfile)
         logger.success("Matrix stored")
