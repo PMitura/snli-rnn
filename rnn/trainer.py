@@ -163,7 +163,7 @@ def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix):
     premise_last = last_relevant(output_premise, premise_lengths, num_steps_premise)
     hypothesis_last = last_relevant(output_hypothesis, hypothesis_lengths, num_steps_hypothesis)
 
-    # merge networks into a single dense layer
+    # merge networks, apply dense layers
     rnn_join = tf.concat([premise_last, hypothesis_last], 1)
     # drop_join = tf.nn.dropout(rnn_join, 0.5)
     dense1 = tf.layers.dense(rnn_join, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
@@ -212,7 +212,7 @@ def run():
     num_batches = min(BATCH_CEILING, train_labels.shape[0] // BATCH_SIZE)
     num_test_batches = min(BATCH_CEILING, test_labels.shape[0] // BATCH_SIZE)
     train_batch_queue = tf.train.range_input_producer(limit=num_batches, shuffle=True)
-    test_batch_queue = tf.train.range_input_producer(limit=num_test_batches, shuffle=True)
+    test_batch_queue = tf.train.range_input_producer(limit=num_test_batches, shuffle=False)
     premise_tf, hypothesis_tf, label_tf = produce_batch(train_premise_matrix, train_hypothesis_matrix, train_labels,
                                                         train_batch_queue)
     premise_ts, hypothesis_ts, label_ts = produce_batch(test_premise_matrix, test_hypothesis_matrix, test_labels,
@@ -230,7 +230,7 @@ def run():
         for epoch in range(1, EPOCH_COUNT + 1):
             logger.info("Epoch " + str(epoch) + " startup...", level=2)
 
-            # Run training on all batches
+            # Run training on all batches (optimizer on)
             sum_loss = 0
             sum_err = 0
             for batch in range(1, num_batches + 1):
