@@ -5,7 +5,6 @@ Trainer module. Responsible for training the neural network, and saving the crea
 import json
 import numpy as np
 import os
-import random
 import sys
 import rnn.logger as logger
 import rnn.preprocessor as prep
@@ -13,10 +12,11 @@ import tensorflow as tf
 
 RNN_HIDDEN_COUNT = 300
 EPOCH_COUNT = 20
-LEARNING_RATE = 0.003
+LEARNING_RATE = 0.001
 BATCH_SIZE = 64
 BATCH_CEILING = 5000
 NUM_CLASSES = 3
+DROPOUT_RATE = 0.8
 
 
 # Loads embedding matrix as a tensorflow variable
@@ -124,7 +124,7 @@ def time_distributed_dense(in_mx):
     return out_mx
 
 
-def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix):
+def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix, keep_rate):
     # vectors with individual sequence lengths
     num_steps_premise = tf.shape(premise_batch)[1]
     num_steps_hypothesis = tf.shape(hypothesis_batch)[1]
@@ -135,8 +135,10 @@ def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix):
         premise_lengths = get_sequence_lengths(premise_embeddings)
         premise_shifted = time_distributed_dense(premise_embeddings)
         gru_premise_layer = tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)
+        gru_premise_layer = tf.nn.rnn_cell.DropoutWrapper(gru_premise_layer, output_keep_prob=keep_rate)
+        gru_premise_multi = tf.contrib.rnn.MultiRNNCell([gru_premise_layer] * 2)
         output_premise, states_premise = tf.nn.dynamic_rnn(
-            cell=gru_premise_layer,
+            cell=gru_premise_multi,
             inputs=premise_shifted,
             dtype=tf.float32,
             sequence_length=premise_lengths
@@ -147,8 +149,10 @@ def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix):
         hypothesis_lengths = get_sequence_lengths(hypothesis_embeddings)
         hypothesis_shifted = time_distributed_dense(hypothesis_embeddings)
         gru_hypothesis_layer = tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)
+        gru_hypothesis_layer = tf.nn.rnn_cell.DropoutWrapper(gru_hypothesis_layer, output_keep_prob=keep_rate)
+        gru_hypothesis_multi = tf.contrib.rnn.MultiRNNCell([gru_hypothesis_layer] * 2)
         output_hypothesis, states_hypothesis = tf.nn.dynamic_rnn(
-            cell=gru_hypothesis_layer,
+            cell=gru_hypothesis_multi,
             inputs=hypothesis_shifted,
             dtype=tf.float32,
             sequence_length=hypothesis_lengths
@@ -160,23 +164,23 @@ def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix):
 
     # merge networks, apply dense layers
     rnn_join = tf.concat([premise_last, hypothesis_last], 1)
-    # drop_join = tf.nn.dropout(rnn_join, 0.5)
     dense1 = tf.layers.dense(rnn_join, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
-    # drop1 = tf.nn.dropout(dense1, 0.5)
-    dense2 = tf.layers.dense(dense1, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
-    # drop2 = tf.nn.dropout(dense2, 0.5)
-    dense3 = tf.layers.dense(dense2, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
+    drop1 = tf.nn.dropout(dense1, keep_prob=keep_rate)
+    dense2 = tf.layers.dense(drop1, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
+    drop2 = tf.nn.dropout(dense2, keep_prob=keep_rate)
+    # dense3 = tf.layers.dense(drop2, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
+    # drop3 = tf.nn.dropout(dense3, keep_prob=keep_rate)
 
     # softmax classification layer on output
     num_classes = NUM_CLASSES
     weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN_COUNT * 2, num_classes], stddev=0.1))
     bias = tf.Variable(tf.constant(0.1, shape=[num_classes]))
-    prediction = tf.nn.softmax(tf.matmul(dense3, weight) + bias)
+    prediction = tf.nn.softmax(tf.matmul(drop2, weight) + bias)
 
     # feed results into optimizer
     offset = tf.constant(1e-8, shape=[num_classes])  # prevent NaN loss in case of log(0)
     cross_entropy = tf.reduce_mean(-tf.reduce_sum(label_batch * tf.log(tf.add(prediction, offset)), [1]))
-    optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
+    optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE)
     error = get_error(prediction, label_batch)
     return optimizer.minimize(cross_entropy), cross_entropy, error
 
@@ -199,9 +203,10 @@ def run():
     premise_ph = tf.placeholder(tf.int32, [None, None])
     hypothesis_ph = tf.placeholder(tf.int32, [None, None])
     labels_ph = tf.placeholder(tf.float32, [None, train_labels.shape[1]])
+    keep_rate_ph = tf.placeholder(tf.float32)
 
     # Model is given as optimizer minimize operation
-    model, loss, error = build_model(premise_ph, hypothesis_ph, labels_ph, embedding_matrix)
+    model, loss, error = build_model(premise_ph, hypothesis_ph, labels_ph, embedding_matrix, keep_rate_ph)
 
     # create batch producers for both training and testing
     num_batches = min(BATCH_CEILING, train_labels.shape[0] // BATCH_SIZE)
@@ -233,7 +238,8 @@ def run():
                 _, curr_loss, curr_err = session.run([model, loss, error],
                                                      {premise_ph: premise_batch,
                                                       hypothesis_ph: hypothesis_batch,
-                                                      labels_ph: labels_batch})
+                                                      labels_ph: labels_batch,
+                                                      keep_rate_ph: DROPOUT_RATE})
                 sum_loss += curr_loss
                 sum_err += curr_err
                 if batch % 100 == 0 and batch > 0:
@@ -248,7 +254,8 @@ def run():
                 curr_loss, curr_err = session.run([loss, error],
                                                   {premise_ph: premise_batch_t,
                                                    hypothesis_ph: hypothesis_batch_t,
-                                                   labels_ph: labels_batch_t})
+                                                   labels_ph: labels_batch_t,
+                                                   keep_rate_ph: 1.0})
                 test_loss += curr_loss
                 test_err += curr_err
             test_loss /= num_test_batches
