@@ -14,9 +14,9 @@ RNN_HIDDEN_COUNT = 300
 EPOCH_COUNT = 20
 LEARNING_RATE = 0.001
 BATCH_SIZE = 64
-BATCH_CEILING = 5000
+BATCH_CEILING = 10000
 NUM_CLASSES = 3
-DROPOUT_RATE = 0.8
+DROPOUT_RATE = 0.9
 
 
 # Loads embedding matrix as a tensorflow variable
@@ -81,6 +81,18 @@ def load_test_matrices():
     return premise, hypothesis, labels
 
 
+# returns the number of trainable variables in current TF graph
+def get_model_variable_count():
+    total_parameters = 0
+    for variable in tf.trainable_variables():
+        shape = variable.get_shape()
+        variable_parameters = 1
+        for dim in shape:
+            variable_parameters *= dim.value
+        total_parameters += variable_parameters
+    return total_parameters
+
+
 def produce_batch(premise, hypothesis, labels, queue, batch_size=BATCH_SIZE):
     num_steps_premise = premise.shape[1]
     num_steps_hypothesis = hypothesis.shape[1]
@@ -136,9 +148,9 @@ def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix, 
         premise_shifted = time_distributed_dense(premise_embeddings)
         gru_premise_layer = tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)
         gru_premise_layer = tf.nn.rnn_cell.DropoutWrapper(gru_premise_layer, output_keep_prob=keep_rate)
-        gru_premise_multi = tf.contrib.rnn.MultiRNNCell([gru_premise_layer] * 2)
+        # gru_premise_multi = tf.contrib.rnn.MultiRNNCell([gru_premise_layer] * 2)
         output_premise, states_premise = tf.nn.dynamic_rnn(
-            cell=gru_premise_multi,
+            cell=gru_premise_layer,
             inputs=premise_shifted,
             dtype=tf.float32,
             sequence_length=premise_lengths
@@ -150,9 +162,9 @@ def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix, 
         hypothesis_shifted = time_distributed_dense(hypothesis_embeddings)
         gru_hypothesis_layer = tf.nn.rnn_cell.GRUCell(RNN_HIDDEN_COUNT)
         gru_hypothesis_layer = tf.nn.rnn_cell.DropoutWrapper(gru_hypothesis_layer, output_keep_prob=keep_rate)
-        gru_hypothesis_multi = tf.contrib.rnn.MultiRNNCell([gru_hypothesis_layer] * 2)
+        # gru_hypothesis_multi = tf.contrib.rnn.MultiRNNCell([gru_hypothesis_layer] * 2)
         output_hypothesis, states_hypothesis = tf.nn.dynamic_rnn(
-            cell=gru_hypothesis_multi,
+            cell=gru_hypothesis_layer,
             inputs=hypothesis_shifted,
             dtype=tf.float32,
             sequence_length=hypothesis_lengths
@@ -168,14 +180,14 @@ def build_model(premise_batch, hypothesis_batch, label_batch, embedding_matrix, 
     drop1 = tf.nn.dropout(dense1, keep_prob=keep_rate)
     dense2 = tf.layers.dense(drop1, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
     drop2 = tf.nn.dropout(dense2, keep_prob=keep_rate)
-    # dense3 = tf.layers.dense(drop2, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
-    # drop3 = tf.nn.dropout(dense3, keep_prob=keep_rate)
+    dense3 = tf.layers.dense(drop2, RNN_HIDDEN_COUNT * 2, activation=tf.nn.relu)
+    drop3 = tf.nn.dropout(dense3, keep_prob=keep_rate)
 
     # softmax classification layer on output
     num_classes = NUM_CLASSES
     weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN_COUNT * 2, num_classes], stddev=0.1))
     bias = tf.Variable(tf.constant(0.1, shape=[num_classes]))
-    prediction = tf.nn.softmax(tf.matmul(drop2, weight) + bias)
+    prediction = tf.nn.softmax(tf.matmul(drop3, weight) + bias)
 
     # feed results into optimizer
     offset = tf.constant(1e-8, shape=[num_classes])  # prevent NaN loss in case of log(0)
@@ -217,7 +229,7 @@ def run():
                                                         train_batch_queue)
     premise_ts, hypothesis_ts, label_ts = produce_batch(test_premise_matrix, test_hypothesis_matrix, test_labels,
                                                         test_batch_queue)
-    logger.success("Model built.")
+    logger.success("Model built. Number of variables: " + str(get_model_variable_count()))
 
     logger.info("Running Tensorflow session. Good luck.")
     with tf.Session() as session:
@@ -227,6 +239,8 @@ def run():
 
         session.run(tf.global_variables_initializer())
 
+        train_stats = []
+        test_stats = []
         for epoch in range(1, EPOCH_COUNT + 1):
             logger.info("Epoch " + str(epoch) + " startup...", level=2)
 
@@ -245,6 +259,7 @@ def run():
                 if batch % 100 == 0 and batch > 0:
                     logger.info("Batch " + str(batch) + ", loss: " + str(sum_loss / batch)
                                 + "    acc.: " + str((1 - sum_err / batch) * 100), level=3)
+            train_stats.append([sum_loss / num_batches, (1 - sum_err / num_batches) * 100])
 
             # Run testing on all batches (optimizer off)
             test_loss = 0
@@ -262,6 +277,9 @@ def run():
             test_err /= num_test_batches
             logger.info("Epoch " + str(epoch) + " done. Test loss: " + str(test_loss)
                         + "    Test acc: " + str((1 - test_err) * 100), level=2)
+            test_stats.append([test_loss, (1 - test_err) * 100])
+        print(train_stats)
+        print(test_stats)
 
         input_coord.request_stop()
         input_coord.join(input_threads)

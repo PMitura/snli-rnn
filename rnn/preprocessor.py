@@ -21,10 +21,16 @@ PRECOMPUTED_TRAIN_LABELS_PATH = "data/train_labels.json"
 PRECOMPUTED_TEST_PREMISES_PATH = "data/test_data_premises_matrix.json"
 PRECOMPUTED_TEST_HYPOTHESES_PATH = "data/test_data_hypotheses_matrix.json"
 PRECOMPUTED_TEST_LABELS_PATH = "data/test_labels.json"
+"""
+Standard settings:
+- Small run: 100000
+- Big run:   550000
+"""
+LIMIT = 550000
 
 
 # Converts json file to array of python dictionaries
-def json_to_array(filename, limit=100000):
+def json_to_array(filename, limit=LIMIT):
     lines = []
     with open(filename, "rb") as jsonl_file:
         for line in itertools.islice(json_lines.reader(jsonl_file), 0, limit):
@@ -105,7 +111,7 @@ def generate_embedding_matrix(embeddings_dict, word_id_mapping):
 def input_data_to_matrices(dataset, word_id_mapping, label_dict):
     premise_matrix = []
     hypothesis_matrix = []
-    label_counter = 0
+    label_counter = len(label_dict)
     labels = []
 
     # sentence1 denotes premise, sentence2 is hypothesis
@@ -116,20 +122,31 @@ def input_data_to_matrices(dataset, word_id_mapping, label_dict):
         if label not in label_dict:
             label_dict[label] = label_counter
             label_counter += 1
-        labels.append(label_dict[label])
 
         premise_row = []
         hypothesis_row = []
+        scrap = False
         for item in sentence_to_words(sentence_pair["sentence1"]):
             if item in word_id_mapping:
                 premise_row.append(word_id_mapping[item])
+            else:
+                scrap = True
+                break
         for item in sentence_to_words(sentence_pair["sentence2"]):
             if item in word_id_mapping:
                 hypothesis_row.append(word_id_mapping[item])
+            else:
+                scrap = True
+                break
+        # do not use sentence, if it contains an unknown word
+        if scrap:
+            continue
         premise_matrix.append(premise_row)
         hypothesis_matrix.append(hypothesis_row)
+        labels.append(label_dict[label])
 
     logger.info("Number of distinct labels: " + str(label_counter), level=2)
+    logger.info("Length of cleaned dataset: " + str(len(labels)), level=2)
     return premise_matrix, hypothesis_matrix, labels
 
 
